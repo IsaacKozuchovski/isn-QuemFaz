@@ -1,6 +1,11 @@
 name: QuemFaz
-description: A minimal AWS Python Pulumi program
-runtime: python
+description: Sistema QuemFaz - Projeto da disciplina ISN 2026.2
+
+runtime:
+  name: python
+  options:
+    toolchain: uv
+    
 config:
   pulumi:tags:
     value:
