@@ -1,0 +1,17 @@
+# AWS CLI v2
+.aws-cli/
+awscliv2.zip
+aws/
+
+# AWS SAM CLI
+.aws-sam-cli
+aws-sam-cli-linux-x86_64.zip
+sam-installation/
+.aws-sam/
+
+# tmux
+tmux-*
+
+# Dependências e caches
+node_modules/
+__pycache__/

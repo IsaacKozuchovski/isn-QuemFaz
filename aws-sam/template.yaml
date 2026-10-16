@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: QuemFaz - backend (API Gateway + Lambda + DynamoDB)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Handler: handler.handler
+    Timeout: 10
+    Layers:
+      - !Ref ComumLayer
+    Environment:
+      Variables:
+        # Vazio na AWS; o env.json aponta para o DynamoDB Local no desenvolvimento
+        DYNAMODB_ENDPOINT: ""
+        MEMBROS_TABLE: !Ref MembrosTable
+        NUCLEOS_TABLE: !Ref NucleosTable
+        TAREFAS_TABLE: !Ref TarefasTable
+
+Resources:
+  ## ---- Banco de dados ----------------------------------------------------
+  MembrosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: membroId, AttributeType: S }
+        - { AttributeName: nucleoId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: membroId, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: nucleoId-index
+          KeySchema:
+            - { AttributeName: nucleoId, KeyType: HASH }
+          Projection: { ProjectionType: ALL }
+
+  NucleosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: nucleoId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: nucleoId, KeyType: HASH }
+
+  TarefasTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: nucleoId, AttributeType: S }
+        - { AttributeName: tarefaId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: nucleoId, KeyType: HASH }
+        - { AttributeName: tarefaId, KeyType: RANGE }
+
+  ## ---- Código compartilhado ----------------------------------------------
+  ComumLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: functions/comum/
+      CompatibleRuntimes: [python3.12]
+    Metadata:
+      BuildMethod: python3.12
+
+  ## ---- Funções Lambda ----------------------------------------------------
+  LoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/login/
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref MembrosTable }
+      Events:
+        Login:
+          Type: Api
+          Properties: { Path: "/login", Method: post }
+
+  NucleosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/nucleos/
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref MembrosTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref NucleosTable }
+      Events:
+        Criar:
+          Type: Api
+          Properties: { Path: "/nucleos", Method: post }
+        Entrar:
+          Type: Api
+          Properties: { Path: "/nucleos/{nucleoId}/membros", Method: post }
+
+  TarefasFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/tarefas/
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref MembrosTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref TarefasTable }
+      Events:
+        Listar:
+          Type: Api
+          Properties: { Path: "/tarefas", Method: get }
+        Criar:
+          Type: Api
+          Properties: { Path: "/tarefas", Method: post }
+        Escolher:
+          Type: Api
+          Properties: { Path: "/tarefas/{tarefaId}/escolher", Method: post }
+        Concluir:
+          Type: Api
+          Properties: { Path: "/tarefas/{tarefaId}/concluir", Method: post }
+
+  AprovarFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/aprovar/
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref MembrosTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref TarefasTable }
+      Events:
+        Aprovar:
+          Type: Api
+          Properties: { Path: "/aprovar", Method: post }
+
+  PlacarFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/placar/
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref MembrosTable }
+      Events:
+        Placar:
+          Type: Api
+          Properties: { Path: "/placar", Method: get }
+
+Outputs:
+  ApiUrl:
+    Description: URL da API
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/

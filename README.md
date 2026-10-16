@@ -14,6 +14,7 @@ Tecnicamente, é uma aplicação web na AWS com arquitetura de microsserviços o
 
 - [Requisitos funcionais e não funcionais](docs/requisitos.md)
 - [Regras de negócio](docs/regras-de-negocio.md)
+- [Backend: API, banco de dados e execução local (AWS SAM)](aws-sam/README.md)
 - Casos de uso:
   - [UC01 · Autenticar-se](docs/casos-de-uso/caso-de-uso-1.md)
   - [UC02 · Criar núcleo familiar](docs/casos-de-uso/caso-de-uso-2.md)
