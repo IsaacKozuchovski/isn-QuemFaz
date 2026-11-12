@@ -1,4 +1,5 @@
 config:
+  QuemFaz:dominio: quemfaz.negoci.online
   aws:zoneId: Z08495123KE7P30ERBKKH
   aws:roleArn: arn:aws:iam::789223369510:role/route53-rr-role
   aws:externalId: 78308359ea3f5d5a55257c6be0237f65
