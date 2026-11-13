@@ -15,3 +15,6 @@ tmux-*
 # Dependências e caches
 node_modules/
 __pycache__/
+
+# Build do frontend
+frontend/dist/

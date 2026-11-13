@@ -89,6 +89,9 @@ Resources:
         Entrar:
           Type: Api
           Properties: { Path: "/nucleos/{nucleoId}/membros", Method: post }
+        Consultar:
+          Type: Api
+          Properties: { Path: "/nucleos/{nucleoId}", Method: get }
 
   TarefasFunction:
     Type: AWS::Serverless::Function

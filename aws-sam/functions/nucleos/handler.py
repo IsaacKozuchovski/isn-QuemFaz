@@ -1,5 +1,6 @@
 """UC02 · POST /nucleos: cria o núcleo familiar.
 UC03 · POST /nucleos/{nucleoId}/membros: entra num núcleo (o id funciona como convite).
+       GET  /nucleos/{nucleoId}: dados do núcleo (nome), só para quem é dele.
 """
 import uuid
 
@@ -46,10 +47,22 @@ def entrar(event, membro):
     return resposta(200, nucleo)
 
 
+def consultar(event, membro):
+    nucleo_id = event["pathParameters"]["nucleoId"]
+    if membro.get("nucleoId") != nucleo_id:  # RN07
+        return erro(403, "Você não pertence a este núcleo familiar")
+    nucleo = nucleos.get_item(Key={"nucleoId": nucleo_id}).get("Item")
+    if not nucleo:
+        return erro(404, "Núcleo não encontrado")
+    return resposta(200, nucleo)
+
+
 def handler(event, context):
     membro, falha = membro_atual(event)
     if falha:
         return falha
+    if event["httpMethod"] == "GET":
+        return consultar(event, membro)
     if event.get("pathParameters"):
         return entrar(event, membro)
     return criar(event, membro)

@@ -54,11 +54,15 @@ def criar(event, membro):
         return erro(400, "horarioLimite deve estar em ISO 8601 com fuso (ex.: 2026-10-20T18:00:00Z)")
     if limite <= _agora():
         return erro(400, "horarioLimite já passou")
+    descricao = dados.get("descricao") or ""
+    if not isinstance(descricao, str) or len(descricao) > 500:
+        return erro(400, "descricao deve ser um texto de até 500 caracteres")
 
     tarefa = {
         "nucleoId": membro["nucleoId"],
         "tarefaId": str(uuid.uuid4()),
         "nome": dados["nome"],
+        "descricao": descricao.strip(),
         "pontos": pontos,
         "idadeMinima": idade_minima,
         "horarioLimite": limite.isoformat(),
