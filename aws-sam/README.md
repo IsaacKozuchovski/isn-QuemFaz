@@ -8,7 +8,7 @@ API Gateway + Lambda (Python/boto3) + DynamoDB, definido no [template.yaml](temp
 |---|---|---|
 | `Membros` | `membroId` | nome, email, idade, nucleoId, pontos · índice `nucleoId-index` |
 | `Nucleos` | `nucleoId` | nome, criadoPor |
-| `Tarefas` | `nucleoId` + `tarefaId` | nome, pontos, idadeMinima, horarioLimite, status, responsavel |
+| `Tarefas` | `nucleoId` + `tarefaId` | nome, descricao (opcional), pontos, idadeMinima, horarioLimite, status, responsavel |
 
 Localmente o banco roda no DynamoDB Local (Docker); na AWS, as tabelas são criadas pelo template.
 
@@ -21,6 +21,7 @@ O usuário é identificado pelo header `x-membro-id` (será substituído pelo Co
 | POST | `/login` | Cria ou retorna o membro |
 | POST | `/nucleos` | Cria um núcleo familiar |
 | POST | `/nucleos/{nucleoId}/membros` | Entra num núcleo |
+| GET | `/nucleos/{nucleoId}` | Dados do núcleo (nome) |
 | GET / POST | `/tarefas` | Lista / cadastra tarefas |
 | POST | `/tarefas/{tarefaId}/escolher` | Assume uma tarefa |
 | POST | `/tarefas/{tarefaId}/concluir` | Marca como concluída |

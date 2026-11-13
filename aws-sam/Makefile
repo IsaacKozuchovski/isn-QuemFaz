@@ -50,7 +50,9 @@ build:
 	sam build
 
 api: wait-table build
-	sam local start-api --env-vars env.json --docker-network $(NETWORK)
+	# EAGER: um container por função já fica de pé e é reaproveitado entre as
+	# requisições (sem isso, cada chamada sobe um container novo, ~2,5 s)
+	sam local start-api --env-vars env.json --docker-network $(NETWORK) --warm-containers EAGER
 
 ## ---- right: client -------------------------------------------------------
 # Use MEMBRO=<id> para simular usuários diferentes (enquanto o Cognito não está ligado)

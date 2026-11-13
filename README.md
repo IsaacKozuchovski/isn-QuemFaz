@@ -10,8 +10,22 @@ Pra evitar fraude, a conclusão de uma tarefa só é validada com a aprovação 
 
 Tecnicamente, é uma aplicação web na AWS com arquitetura de microsserviços orientada a eventos: login via Google (Cognito), regras de negócio em Lambda, dados no DynamoDB, notificações por email via SES e sorteio automático agendado pelo EventBridge Scheduler. Infraestrutura como código (IaC) e deploy automatizado via CI/CD.
 
+## Como rodar
+
+Na raiz do repositório (Linux ou macOS):
+
+```bash
+make          # instala o que faltar: Pulumi, uv, Node.js, AWS CLI e SAM
+make deploy   # pulumi up no stack dev, com build do frontend
+```
+
+O endereço do site aparece no fim, em `url`. Se o Pulumi ainda não tiver login, o `make deploy` pede; se faltarem credenciais da AWS, avisa para rodar `aws configure`.
+
+Para rodar tudo localmente com Docker: `make dev` → http://localhost:5173.
+
 ## Documentação
 
+- [Frontend: build, hospedagem e deploy](frontend/README.md)
 - [Requisitos funcionais e não funcionais](docs/requisitos.md)
 - [Regras de negócio](docs/regras-de-negocio.md)
 - [Backend: API, banco de dados e execução local (AWS SAM)](aws-sam/README.md)

@@ -1,4 +1,7 @@
 import json
+import mimetypes
+import subprocess
+from pathlib import Path
 
 import pulumi
 import pulumi_aws as aws
@@ -7,6 +10,14 @@ stack = pulumi.get_stack()
 is_prod = stack == "prod"
 
 FUNCOES_DIR = "../aws-sam/functions"
+FRONTEND_DIST = Path("../frontend/dist")
+# Todas as rotas da API ficam sob /api; o resto do domínio é o frontend.
+API_PREFIX = "/api"
+
+# Nem todo sistema conhece esses tipos; sem eles a fonte iria para o S3 como
+# application/octet-stream
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
 RUNTIME = aws.lambda_.Runtime.PYTHON3D12
 
 if is_prod:
@@ -178,10 +189,13 @@ def public_function(pasta, rotas, acessos):
         payload_format_version="1.0",
     )
     for evento, route_key in rotas.items():
+        metodo, caminho = route_key.split(" ", 1)
         aws.apigatewayv2.Route(
             f"{name}-{evento}-route",
             api_id=api.id,
-            route_key=route_key,
+            # Os handlers usam endswith() e pathParameters, então o prefixo
+            # não muda nada no código das Lambdas.
+            route_key=f"{metodo} {API_PREFIX}{caminho}",
             target=integration.id.apply(lambda i: f"integrations/{i}"),
         )
     aws.lambda_.Permission(
@@ -205,6 +219,7 @@ public_function(
     {
         "criar": "POST /nucleos",
         "entrar": "POST /nucleos/{nucleoId}/membros",
+        "consultar": "GET /nucleos/{nucleoId}",
     },
     [(membros, CRUD), (nucleos, CRUD)],
 )
@@ -230,6 +245,52 @@ public_function(
     "placar",
     {"placar": "GET /placar"},
     [(membros, LEITURA)],
+)
+
+# --- Frontend (S3 privado, lido só pelo CloudFront) ---
+# O build roda aqui mesmo, então `pulumi up` sozinho já publica o front atual.
+# (npm install em vez de npm ci: não apaga o node_modules de um `npm run dev`
+# que esteja rodando, e continua respeitando o package-lock.json)
+for comando in (["npm", "install", "--no-audit", "--no-fund"], ["npm", "run", "build"]):
+    r = subprocess.run(comando, cwd=FRONTEND_DIST.parent, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise Exception(f"Falhou: {' '.join(comando)} em frontend/\n{r.stdout}\n{r.stderr}")
+
+site = aws.s3.Bucket("quemfaz-frontend", force_destroy=True)
+
+aws.s3.BucketPublicAccessBlock(
+    "quemfaz-frontend-block",
+    bucket=site.id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+)
+
+for arquivo in sorted(p for p in FRONTEND_DIST.rglob("*") if p.is_file()):
+    chave = arquivo.relative_to(FRONTEND_DIST).as_posix()
+    aws.s3.BucketObjectv2(
+        f"site/{chave}",
+        bucket=site.id,
+        key=chave,
+        source=pulumi.FileAsset(str(arquivo)),
+        content_type=mimetypes.guess_type(arquivo.name)[0] or "application/octet-stream",
+        # Os arquivos em assets/ têm hash no nome (gerado pelo Vite), então
+        # podem ficar em cache para sempre. O index.html aponta para eles e
+        # precisa ser revalidado a cada acesso para o deploy novo aparecer
+        # sem invalidar o cache do CloudFront.
+        cache_control=(
+            "public, max-age=31536000, immutable"
+            if chave.startswith("assets/")
+            else "no-cache"
+        ),
+    )
+
+site_oac = aws.cloudfront.OriginAccessControl(
+    "quemfaz-frontend-oac",
+    origin_access_control_origin_type="s3",
+    signing_behavior="always",
+    signing_protocol="sigv4",
 )
 
 # --- CloudFront (+ ACM e Route53 em prod) ---
@@ -274,6 +335,7 @@ if is_prod:
     )
 
 caching_disabled = aws.cloudfront.get_cache_policy(name="Managed-CachingDisabled")
+caching_optimized = aws.cloudfront.get_cache_policy(name="Managed-CachingOptimized")
 all_viewer_except_host = aws.cloudfront.get_origin_request_policy(
     name="Managed-AllViewerExceptHostHeader"
 )
@@ -286,6 +348,7 @@ distribution = aws.cloudfront.Distribution(
     is_ipv6_enabled=True,
     http_version="http2and3",
     aliases=aliases,
+    default_root_object="index.html",
     origins=[
         aws.cloudfront.DistributionOriginArgs(
             domain_name=api_hostname,
@@ -296,20 +359,60 @@ distribution = aws.cloudfront.Distribution(
                 origin_protocol_policy="https-only",
                 origin_ssl_protocols=["TLSv1.2"],
             ),
+        ),
+        aws.cloudfront.DistributionOriginArgs(
+            domain_name=site.bucket_regional_domain_name,
+            origin_id="site",
+            origin_access_control_id=site_oac.id,
+        ),
+    ],
+    # /api/* → API Gateway, sem cache (respostas dependem do usuário)
+    ordered_cache_behaviors=[
+        aws.cloudfront.DistributionOrderedCacheBehaviorArgs(
+            path_pattern=f"{API_PREFIX}/*",
+            target_origin_id="api",
+            viewer_protocol_policy="redirect-to-https",
+            allowed_methods=["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+            cached_methods=["GET", "HEAD"],
+            cache_policy_id=caching_disabled.id,
+            origin_request_policy_id=all_viewer_except_host.id,
         )
     ],
+    # Todo o resto → frontend no S3, com cache
     default_cache_behavior=aws.cloudfront.DistributionDefaultCacheBehaviorArgs(
-        target_origin_id="api",
+        target_origin_id="site",
         viewer_protocol_policy="redirect-to-https",
-        allowed_methods=["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+        allowed_methods=["GET", "HEAD"],
         cached_methods=["GET", "HEAD"],
-        cache_policy_id=caching_disabled.id,
-        origin_request_policy_id=all_viewer_except_host.id,
+        cache_policy_id=caching_optimized.id,
+        compress=True,
     ),
     viewer_certificate=viewer_cert,
     restrictions=aws.cloudfront.DistributionRestrictionsArgs(
         geo_restriction=aws.cloudfront.DistributionRestrictionsGeoRestrictionArgs(
             restriction_type="none"
+        )
+    ),
+)
+
+# Só esta distribuição do CloudFront pode ler o bucket
+aws.s3.BucketPolicy(
+    "quemfaz-frontend-policy",
+    bucket=site.id,
+    policy=pulumi.Output.all(site.arn, distribution.arn).apply(
+        lambda args: json.dumps(
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {"Service": "cloudfront.amazonaws.com"},
+                        "Action": "s3:GetObject",
+                        "Resource": f"{args[0]}/*",
+                        "Condition": {"StringEquals": {"AWS:SourceArn": args[1]}},
+                    }
+                ],
+            }
         )
     ),
 )
@@ -335,6 +438,7 @@ pulumi.export("membros_table", membros.name)
 pulumi.export("nucleos_table", nucleos.name)
 pulumi.export("tarefas_table", tarefas.name)
 pulumi.export("api_url", api.api_endpoint)
+pulumi.export("frontend_bucket", site.bucket)
 pulumi.export(
     "url",
     (
