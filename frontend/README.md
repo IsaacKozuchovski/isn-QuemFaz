@@ -13,23 +13,21 @@ Como front e API ficam no mesmo domínio, não há CORS. Por causa do prefixo, o
 
 ## Rodar localmente
 
-Com o backend local no ar (`make dev` em `aws-sam/`):
+Na raiz do repositório:
 
 ```bash
-npm ci
-npm run dev       # http://localhost:5173 — /api/* é repassado para o sam local (porta 3000)
+make install   # só na primeira vez: AWS CLI, SAM, Pulumi, uv e Node.js
+make dev       # banco + API + frontend → http://localhost:5173 (Ctrl+C para parar)
+make stop      # derruba o DynamoDB Local
 ```
+
+O `make dev` confere antes se Docker, SAM e Node estão disponíveis e diz o que falta. O Vite repassa `/api/*` para o `sam local` (porta 3000). Os dados do DynamoDB Local ficam só em memória: somem quando o container para.
 
 Para apontar para outra API: `API_URL=https://<url>/api npm run dev`.
 
 ## Deploy
 
-Automático pelo GitHub Actions ([deploy.yml](../.github/workflows/deploy.yml)): build do front e `pulumi up` a cada push na `main`. Para fazer na mão:
-
-```bash
-cd frontend && npm ci && npm run build
-cd ../pulumi && pulumi up -s dev
-```
+O programa Pulumi faz o build do front sozinho (`npm install` + `npm run build`) antes de enviar o `dist/` ao S3. Então basta `make deploy` na raiz (ou `cd pulumi && pulumi up -s dev`).
 
 ## Autenticação
 

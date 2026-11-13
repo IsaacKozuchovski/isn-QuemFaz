@@ -1,5 +1,6 @@
 import json
 import mimetypes
+import subprocess
 from pathlib import Path
 
 import pulumi
@@ -247,10 +248,13 @@ public_function(
 )
 
 # --- Frontend (S3 privado, lido só pelo CloudFront) ---
-if not (FRONTEND_DIST / "index.html").exists():
-    raise Exception(
-        "frontend/dist não encontrado: rode `npm ci && npm run build` em frontend/ antes"
-    )
+# O build roda aqui mesmo, então `pulumi up` sozinho já publica o front atual.
+# (npm install em vez de npm ci: não apaga o node_modules de um `npm run dev`
+# que esteja rodando, e continua respeitando o package-lock.json)
+for comando in (["npm", "install", "--no-audit", "--no-fund"], ["npm", "run", "build"]):
+    r = subprocess.run(comando, cwd=FRONTEND_DIST.parent, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise Exception(f"Falhou: {' '.join(comando)} em frontend/\n{r.stdout}\n{r.stderr}")
 
 site = aws.s3.Bucket("quemfaz-frontend", force_destroy=True)
 
