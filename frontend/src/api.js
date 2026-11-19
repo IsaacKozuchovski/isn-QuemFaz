@@ -1,30 +1,15 @@
 // Cliente da API do QuemFaz. Todas as rotas ficam sob /api no mesmo domínio
 // do site (CloudFront), então não há CORS.
 //
-// Enquanto o Cognito (#40) não está pronto, o usuário é identificado pelo
-// header x-membro-id, guardado no localStorage. Quando o Cognito entrar,
-// basta trocar `cabecalhoAuth` para mandar o token (Authorization: Bearer ...).
+// Com o login do Google ativo, cada requisição leva o token do Cognito
+// (Authorization: Bearer ...). No modo de teste, leva o email digitado no
+// header x-membro-id. Ver auth.js.
 
-const CHAVE = "quemfaz:membroId";
+import { tokenAtual } from "./auth.js";
 
-export function membroSalvo() {
-  try {
-    return localStorage.getItem(CHAVE);
-  } catch {
-    return null;
-  }
-}
-
-export function salvarMembro(id) {
-  try {
-    if (id) localStorage.setItem(CHAVE, id);
-    else localStorage.removeItem(CHAVE);
-  } catch {
-    // sem localStorage (aba anônima bloqueada): segue só em memória
-  }
-}
-
-function cabecalhoAuth(membroId) {
+async function cabecalhoAuth(membroId) {
+  const token = await tokenAtual();
+  if (token) return { Authorization: `Bearer ${token}` };
   return membroId ? { "x-membro-id": membroId } : {};
 }
 
@@ -33,7 +18,7 @@ async function req(membroId, metodo, rota, corpo) {
   try {
     res = await fetch(`/api${rota}`, {
       method: metodo,
-      headers: { "Content-Type": "application/json", ...cabecalhoAuth(membroId) },
+      headers: { "Content-Type": "application/json", ...(await cabecalhoAuth(membroId)) },
       body: corpo === undefined ? undefined : JSON.stringify(corpo),
     });
   } catch {

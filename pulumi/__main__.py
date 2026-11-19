@@ -20,24 +20,45 @@ mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("font/woff", ".woff")
 RUNTIME = aws.lambda_.Runtime.PYTHON3D12
 
+config = pulumi.Config()
+aws_config = pulumi.Config("aws")
+REGIAO = aws_config.require("region")
+
+# --- Login com Google (Cognito) ---
+# Só é ativado depois de configurar as credenciais do Google no stack:
+#   pulumi config set googleClientId <id>
+#   pulumi config set --secret googleClientSecret <secret>
+# Sem elas, a API continua aceitando o header x-membro-id (modo de teste).
+GOOGLE_CLIENT_ID = config.get("googleClientId")
+usar_google = bool(GOOGLE_CLIENT_ID)
+
+# O prefixo do domínio de login do Cognito precisa ser único na região; com o
+# número da conta ele já é conhecido antes do deploy (o Google pede essa URL).
+conta = aws.get_caller_identity().account_id
+COGNITO_DOMINIO = f"quemfaz-{stack}-{conta}"
+COGNITO_URL = f"https://{COGNITO_DOMINIO}.auth.{REGIAO}.amazoncognito.com"
+
 if is_prod:
-    config = pulumi.Config()
-    aws_config = pulumi.Config("aws")
-
     DOMAIN = config.require("dominio")
-    zone_id = aws_config.require("zoneId")
 
-    # A hosted zone já existe e fica em outra conta: os registros DNS são
-    # criados assumindo a role que dá acesso a ela.
-    route53 = aws.Provider(
-        "route53",
-        region=aws_config.require("region"),
-        assume_roles=[
-            aws.ProviderAssumeRoleArgs(
-                role_arn=aws_config.require("roleArn"),
-                external_id=aws_config.require("externalId"),
-            )
-        ],
+    # O subdomínio tem a própria zona DNS, nesta conta. Para ela valer na
+    # internet, o dono do domínio pai (o professor) cria um registro NS
+    # apontando para os servidores de nome abaixo.
+    # protect=True: o Pulumi recusa apagar ou recriar a zona (inclusive num
+    # `pulumi destroy`). Uma zona nova teria outros NS e quebraria a delegação.
+    zona = aws.route53.Zone(
+        "quemfaz-zona",
+        name=DOMAIN,
+        opts=pulumi.ResourceOptions(protect=True),
+    )
+    zone_id = zona.zone_id
+
+    # Mostra os NS assim que a zona existe: o primeiro deploy fica esperando
+    # a validação do certificado, que só passa depois da delegação.
+    zona.name_servers.apply(
+        lambda ns: pulumi.log.info(
+            f"Servidores de nome de {DOMAIN} (mande ao professor): " + ", ".join(ns)
+        )
     )
 
 # --- DynamoDB ---
@@ -161,6 +182,8 @@ lambda_env = aws.lambda_.FunctionEnvironmentArgs(
         "MEMBROS_TABLE": membros.name,
         "NUCLEOS_TABLE": nucleos.name,
         "TAREFAS_TABLE": tarefas.name,
+        # Com o Cognito ativo, as Lambdas ignoram o header x-membro-id
+        **({"EXIGIR_TOKEN": "1"} if usar_google else {}),
     }
 )
 
@@ -197,6 +220,10 @@ def public_function(pasta, rotas, acessos):
             # não muda nada no código das Lambdas.
             route_key=f"{metodo} {API_PREFIX}{caminho}",
             target=integration.id.apply(lambda i: f"integrations/{i}"),
+            # Com o Cognito ativo, o API Gateway recusa (401) quem não manda
+            # um token válido, antes mesmo de chamar a Lambda.
+            authorization_type="JWT" if authorizer else "NONE",
+            authorizer_id=authorizer.id if authorizer else None,
         )
     aws.lambda_.Permission(
         f"{name}-apigw-permission",
@@ -207,45 +234,6 @@ def public_function(pasta, rotas, acessos):
     )
     return fn
 
-
-public_function(
-    "login",
-    {"login": "POST /login"},
-    [(membros, CRUD)],
-)
-
-public_function(
-    "nucleos",
-    {
-        "criar": "POST /nucleos",
-        "entrar": "POST /nucleos/{nucleoId}/membros",
-        "consultar": "GET /nucleos/{nucleoId}",
-    },
-    [(membros, CRUD), (nucleos, CRUD)],
-)
-
-public_function(
-    "tarefas",
-    {
-        "listar": "GET /tarefas",
-        "criar": "POST /tarefas",
-        "escolher": "POST /tarefas/{tarefaId}/escolher",
-        "concluir": "POST /tarefas/{tarefaId}/concluir",
-    },
-    [(membros, LEITURA), (tarefas, CRUD)],
-)
-
-public_function(
-    "aprovar",
-    {"aprovar": "POST /aprovar"},
-    [(membros, CRUD), (tarefas, CRUD)],
-)
-
-public_function(
-    "placar",
-    {"placar": "GET /placar"},
-    [(membros, LEITURA)],
-)
 
 # --- Frontend (S3 privado, lido só pelo CloudFront) ---
 # O build roda aqui mesmo, então `pulumi up` sozinho já publica o front atual.
@@ -317,7 +305,6 @@ if is_prod:
         type=cert.domain_validation_options[0].resource_record_type,
         records=[cert.domain_validation_options[0].resource_record_value],
         ttl=60,
-        opts=pulumi.ResourceOptions(provider=route53),
     )
 
     cert_validation = aws.acm.CertificateValidation(
@@ -334,10 +321,33 @@ if is_prod:
         minimum_protocol_version="TLSv1.2_2021",
     )
 
-caching_disabled = aws.cloudfront.get_cache_policy(name="Managed-CachingDisabled")
 caching_optimized = aws.cloudfront.get_cache_policy(name="Managed-CachingOptimized")
 all_viewer_except_host = aws.cloudfront.get_origin_request_policy(
     name="Managed-AllViewerExceptHostHeader"
+)
+
+# O CloudFront só repassa o header Authorization (o token do login) quando ele
+# faz parte da chave de cache. Com TTL padrão 0, nada é guardado em cache de
+# fato: as respostas das Lambdas não mandam Cache-Control.
+api_cache = aws.cloudfront.CachePolicy(
+    "quemfaz-api-cache",
+    min_ttl=0,
+    default_ttl=0,
+    max_ttl=1,
+    parameters_in_cache_key_and_forwarded_to_origin=aws.cloudfront.CachePolicyParametersInCacheKeyAndForwardedToOriginArgs(
+        headers_config=aws.cloudfront.CachePolicyParametersInCacheKeyAndForwardedToOriginHeadersConfigArgs(
+            header_behavior="whitelist",
+            headers=aws.cloudfront.CachePolicyParametersInCacheKeyAndForwardedToOriginHeadersConfigHeadersArgs(
+                items=["Authorization"]
+            ),
+        ),
+        cookies_config=aws.cloudfront.CachePolicyParametersInCacheKeyAndForwardedToOriginCookiesConfigArgs(
+            cookie_behavior="none"
+        ),
+        query_strings_config=aws.cloudfront.CachePolicyParametersInCacheKeyAndForwardedToOriginQueryStringsConfigArgs(
+            query_string_behavior="all"
+        ),
+    ),
 )
 
 api_hostname = api.api_endpoint.apply(lambda e: e.replace("https://", "").split("/")[0])
@@ -374,7 +384,7 @@ distribution = aws.cloudfront.Distribution(
             viewer_protocol_policy="redirect-to-https",
             allowed_methods=["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
             cached_methods=["GET", "HEAD"],
-            cache_policy_id=caching_disabled.id,
+            cache_policy_id=api_cache.id,
             origin_request_policy_id=all_viewer_except_host.id,
         )
     ],
@@ -431,19 +441,151 @@ if is_prod:
                     evaluate_target_health=False,
                 )
             ],
-            opts=pulumi.ResourceOptions(provider=route53),
         )
+
+# Output nos dois casos (em prod o endereço é fixo, mas o resto do código
+# usa .apply nele)
+site_url = (
+    pulumi.Output.from_input(f"https://{DOMAIN}")
+    if is_prod
+    else distribution.domain_name.apply(lambda d: f"https://{d}")
+)
+
+# --- Cognito: login com Google (UC01) ---
+authorizer = None
+config_frontend = {}
+
+if usar_google:
+    usuarios = aws.cognito.UserPool(
+        "quemfaz-usuarios",
+        name=f"quemfaz-{stack}",
+        # Ninguém cria conta com senha: só entra quem vem pelo Google
+        admin_create_user_config=aws.cognito.UserPoolAdminCreateUserConfigArgs(
+            allow_admin_create_user_only=True
+        ),
+    )
+
+    aws.cognito.UserPoolDomain(
+        "quemfaz-login",
+        domain=COGNITO_DOMINIO,
+        user_pool_id=usuarios.id,
+    )
+
+    google = aws.cognito.IdentityProvider(
+        "google",
+        user_pool_id=usuarios.id,
+        provider_name="Google",
+        provider_type="Google",
+        provider_details={
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": config.require_secret("googleClientSecret"),
+            "authorize_scopes": "openid email profile",
+            # O Cognito preenche estes campos sozinho; declarados aqui, o
+            # Pulumi não acusa diferença a cada deploy.
+            "attributes_url": "https://people.googleapis.com/v1/people/me?personFields=",
+            "attributes_url_add_attributes": "true",
+            "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+            "oidc_issuer": "https://accounts.google.com",
+            "token_request_method": "POST",
+            "token_url": "https://www.googleapis.com/oauth2/v4/token",
+        },
+        attribute_mapping={
+            "email": "email",
+            "name": "name",
+            "given_name": "given_name",
+            "username": "sub",
+        },
+    )
+
+    # O Google devolve a pessoa para a raiz do site, que termina o login
+    voltar_para = site_url.apply(lambda u: [f"{u}/"])
+    cliente_web = aws.cognito.UserPoolClient(
+        "quemfaz-web",
+        name=f"quemfaz-web-{stack}",
+        user_pool_id=usuarios.id,
+        # App no navegador: sem segredo, com PKCE
+        generate_secret=False,
+        allowed_oauth_flows_user_pool_client=True,
+        allowed_oauth_flows=["code"],
+        allowed_oauth_scopes=["openid", "email", "profile"],
+        supported_identity_providers=["Google"],
+        callback_urls=voltar_para,
+        logout_urls=voltar_para,
+        opts=pulumi.ResourceOptions(depends_on=[google]),
+    )
+
+    authorizer = aws.apigatewayv2.Authorizer(
+        "quemfaz-cognito",
+        api_id=api.id,
+        authorizer_type="JWT",
+        identity_sources=["$request.header.Authorization"],
+        jwt_configuration=aws.apigatewayv2.AuthorizerJwtConfigurationArgs(
+            # O frontend manda o id_token, cujo "aud" é o id do cliente
+            audiences=[cliente_web.id],
+            issuer=usuarios.endpoint.apply(lambda e: f"https://{e}"),
+        ),
+    )
+
+    config_frontend = {"cognito": {"url": COGNITO_URL, "clientId": cliente_web.id}}
+
+# --- Rotas da API (depois do Cognito, que protege todas elas) ---
+public_function(
+    "login",
+    {"login": "POST /login"},
+    [(membros, CRUD)],
+)
+
+public_function(
+    "nucleos",
+    {
+        "criar": "POST /nucleos",
+        "entrar": "POST /nucleos/{nucleoId}/membros",
+        "consultar": "GET /nucleos/{nucleoId}",
+    },
+    [(membros, CRUD), (nucleos, CRUD)],
+)
+
+public_function(
+    "tarefas",
+    {
+        "listar": "GET /tarefas",
+        "criar": "POST /tarefas",
+        "escolher": "POST /tarefas/{tarefaId}/escolher",
+        "concluir": "POST /tarefas/{tarefaId}/concluir",
+    },
+    [(membros, LEITURA), (tarefas, CRUD)],
+)
+
+public_function(
+    "aprovar",
+    {"aprovar": "POST /aprovar"},
+    [(membros, CRUD), (tarefas, CRUD)],
+)
+
+public_function(
+    "placar",
+    {"placar": "GET /placar"},
+    [(membros, LEITURA)],
+)
+
+# Configuração lida pelo frontend ao abrir (sem Cognito: {} = modo de teste)
+aws.s3.BucketObjectv2(
+    "site/config.json",
+    bucket=site.id,
+    key="config.json",
+    content=pulumi.Output.from_input(config_frontend).apply(json.dumps),
+    content_type="application/json",
+    cache_control="no-cache",
+)
 
 pulumi.export("membros_table", membros.name)
 pulumi.export("nucleos_table", nucleos.name)
 pulumi.export("tarefas_table", tarefas.name)
 pulumi.export("api_url", api.api_endpoint)
 pulumi.export("frontend_bucket", site.bucket)
-pulumi.export(
-    "url",
-    (
-        f"https://{DOMAIN}"
-        if is_prod
-        else distribution.domain_name.apply(lambda d: f"https://{d}")
-    ),
-)
+# URL a cadastrar no Google Cloud ("URIs de redirecionamento autorizados")
+pulumi.export("google_redirect_uri", f"{COGNITO_URL}/oauth2/idpresponse")
+pulumi.export("login_google", "ativo" if usar_google else "desativado")
+if is_prod:
+    pulumi.export("name_servers", zona.name_servers)
+pulumi.export("url", site_url)

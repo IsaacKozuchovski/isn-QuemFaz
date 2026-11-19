@@ -1,6 +1,6 @@
 config:
   QuemFaz:dominio: quemfaz.negoci.online
-  aws:zoneId: Z08495123KE7P30ERBKKH
-  aws:roleArn: arn:aws:iam::789223369510:role/route53-rr-role
-  aws:externalId: 78308359ea3f5d5a55257c6be0237f65
   aws:region: sa-east-1
+  QuemFaz:googleClientId: 97923460194-s6sia6irno366d9934ma9jbj8b4i8dmu.apps.googleusercontent.com
+  QuemFaz:googleClientSecret:
+    secure: AAABAKymFxTXnYpWt1qcs/E/axAi7lYNiYaykMumD5Pzb9c+n4UHmFWCmIhS2Tu+nRx0oBEl28Fp/26c498BV0Uphg==

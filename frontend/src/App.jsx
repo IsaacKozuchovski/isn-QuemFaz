@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, membroSalvo, salvarMembro } from "./api.js";
+import { api } from "./api.js";
+import {
+  entrarComGoogle,
+  esquecerSessao,
+  iniciar,
+  logado,
+  membroSalvo,
+  modoGoogle,
+  perfil,
+  sair as sairDaConta,
+  salvarMembro,
+} from "./auth.js";
 
 const STATUS = {
   disponivel: "Disponível",
@@ -10,36 +21,58 @@ const STATUS = {
 
 export default function App() {
   const [membro, setMembro] = useState(null);
-  const [carregando, setCarregando] = useState(Boolean(membroSalvo()));
+  const [carregando, setCarregando] = useState(true);
+  // Entrou com o Google, mas ainda não tem cadastro no QuemFaz
+  const [primeiroAcesso, setPrimeiroAcesso] = useState(false);
   const [erro, setErro] = useState("");
 
   // POST /login devolve o membro já cadastrado, então serve para recarregar
   // os dados (pontos, núcleo) de quem já entrou antes.
   const recarregar = useCallback(async () => {
-    const id = membroSalvo();
-    if (!id) return;
+    if (!logado()) return;
     try {
-      setMembro(await api(id).login({}));
+      setMembro(await api(membroSalvo()).login({}));
     } catch (e) {
-      salvarMembro(null);
-      setErro(e.message);
-    } finally {
-      setCarregando(false);
+      if (e.status === 400 && modoGoogle()) {
+        setPrimeiroAcesso(true);
+        return;
+      }
+      esquecerSessao();
+      setMembro(null);
+      setErro(e.status === 401 ? "Sua sessão expirou. Entre de novo." : e.message);
     }
   }, []);
 
   useEffect(() => {
-    recarregar();
+    iniciar()
+      .then(recarregar)
+      .catch((e) => setErro(e.message))
+      .finally(() => setCarregando(false));
   }, [recarregar]);
 
+  function entrou(m) {
+    setPrimeiroAcesso(false);
+    setMembro(m);
+  }
+
   function sair() {
-    salvarMembro(null);
     setMembro(null);
+    setPrimeiroAcesso(false);
+    sairDaConta();
   }
 
   let conteudo;
   if (carregando) conteudo = <p className="vazio">Carregando…</p>;
-  else if (!membro) conteudo = <Login onEntrar={setMembro} erroInicial={erro} />;
+  else if (!membro && modoGoogle())
+    conteudo = (
+      <LoginGoogle
+        primeiroAcesso={primeiroAcesso}
+        onEntrar={entrou}
+        onTrocarConta={sair}
+        erroInicial={erro}
+      />
+    );
+  else if (!membro) conteudo = <LoginEmail onEntrar={entrou} erroInicial={erro} />;
   else if (!membro.nucleoId) conteudo = <SemNucleo membro={membro} onPronto={recarregar} />;
   else conteudo = <Painel membro={membro} onMudou={recarregar} />;
 
@@ -70,10 +103,88 @@ export default function App() {
 }
 
 // ---- UC01 · Autenticar-se ------------------------------------------------
+// Com o Cognito ativo: botão "Entrar com Google". Na volta do Google, quem
+// ainda não tem cadastro informa nome e idade (o email vem da conta Google).
+function LoginGoogle({ primeiroAcesso, onEntrar, onTrocarConta, erroInicial }) {
+  const [erro, setErro] = useState(erroInicial);
+  const [enviando, setEnviando] = useState(false);
+  const conta = perfil();
+
+  async function entrar() {
+    setEnviando(true);
+    setErro("");
+    try {
+      await entrarComGoogle();
+    } catch (e) {
+      setErro(e.message);
+      setEnviando(false);
+    }
+  }
+
+  async function cadastrar(ev) {
+    ev.preventDefault();
+    const f = new FormData(ev.target);
+    setEnviando(true);
+    setErro("");
+    try {
+      onEntrar(await api().login({ nome: f.get("nome").trim(), idade: Number(f.get("idade")) }));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (!primeiroAcesso) {
+    return (
+      <div className="cartao">
+        <h2>Entrar</h2>
+        <p className="dica">Use sua conta Google para acessar o QuemFaz.</p>
+        <button onClick={entrar} disabled={enviando}>
+          {enviando ? "Abrindo o Google…" : "Entrar com Google"}
+        </button>
+        <Erro texto={erro} />
+      </div>
+    );
+  }
+
+  return (
+    <form className="cartao" onSubmit={cadastrar}>
+      <h2>Primeiro acesso</h2>
+      <p className="dica">
+        Bem-vindo{conta.email ? `, ${conta.email}` : ""}! Conte um pouco sobre você para criar seu
+        cadastro.
+      </p>
+      <div className="linha">
+        <label>
+          Nome
+          <input
+            name="nome"
+            required
+            autoFocus
+            autoComplete="given-name"
+            defaultValue={conta.nome}
+          />
+        </label>
+        <label className="curto">
+          Idade
+          <input name="idade" type="number" min="0" required />
+        </label>
+      </div>
+      <button type="button" className="link" onClick={onTrocarConta}>
+        Usar outra conta Google
+      </button>
+      <button disabled={enviando}>{enviando ? "Criando…" : "Criar cadastro"}</button>
+      <Erro texto={erro} />
+    </form>
+  );
+}
+
+// Modo de teste (sem Cognito, ou rodando local): o email identifica a pessoa.
 // Etapa 1: só o email. Se o membro já existe, POST /login devolve o cadastro
 // e a pessoa entra direto. Se não existe, a API responde 400 pedindo nome e
 // idade, e aí aparece a etapa 2 (primeiro acesso).
-function Login({ onEntrar, erroInicial }) {
+function LoginEmail({ onEntrar, erroInicial }) {
   const [erro, setErro] = useState(erroInicial);
   const [enviando, setEnviando] = useState(false);
   const [email, setEmail] = useState("");
@@ -112,7 +223,7 @@ function Login({ onEntrar, erroInicial }) {
       <p className="dica">
         {novo
           ? "Não encontramos esse email. Conte um pouco sobre você para criar seu cadastro."
-          : "O login com Google (Cognito) chega na próxima etapa. Por enquanto, o email identifica você."}
+          : "Modo de teste: o email identifica você (o login com Google não está ativo aqui)."}
       </p>
       <label>
         Email
