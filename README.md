@@ -35,6 +35,16 @@ Sem configuração, o site entra em modo de teste (o email digitado identifica a
    ```
 3. `make deploy` de novo.
 
+### Sorteio e emails
+
+A cada 5 minutos, o sistema sorteia as tarefas que ninguém escolheu até o horário-limite (UC06) e avisa o sorteado por email, enviado por `nao-responda@quemfaz.negoci.online` (configurado em `remetente` no stack).
+
+Enquanto a conta AWS estiver no sandbox do SES, só chegam emails para endereços verificados. Para verificar um email (a pessoa recebe um link de confirmação da AWS):
+
+```bash
+aws sesv2 create-email-identity --email-identity email@da.pessoa.com --region sa-east-1
+```
+
 ### Produção (subdomínio)
 
 O stack `prod` publica o site em `quemfaz.negoci.online` (definido em `pulumi/Pulumi.prod.yaml`), com HTTPS. O subdomínio tem a própria zona DNS na nossa conta AWS:

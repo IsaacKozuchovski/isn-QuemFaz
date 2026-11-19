@@ -12,7 +12,8 @@
         "s3:*",
         "route53:*",
         "cognito-idp:*",
-        "ses:*"
+        "ses:*",
+        "scheduler:*"
       ],
       "Resource": "*"
     },
