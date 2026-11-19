@@ -568,6 +568,103 @@ public_function(
     [(membros, LEITURA)],
 )
 
+# --- Sorteio automático (UC06 / RN02) com aviso por email (SES) ---
+# A cada 5 minutos, o EventBridge Scheduler chama a Lambda "sortear", que
+# atribui as tarefas vencidas e não escolhidas a um membro elegível.
+REMETENTE = config.get("remetente")  # ex.: nao-responda@quemfaz.negoci.online
+
+if is_prod:
+    # Verifica o subdomínio no SES (DKIM). A verificação vale para a conta
+    # inteira, então o dev também pode usar o mesmo remetente.
+    email_dominio = aws.sesv2.EmailIdentity("quemfaz-email", email_identity=DOMAIN)
+    for i in range(3):
+        token = email_dominio.dkim_signing_attributes.apply(lambda a, i=i: a.tokens[i])
+        aws.route53.Record(
+            f"dkim-{i}",
+            zone_id=zone_id,
+            name=token.apply(lambda t: f"{t}._domainkey.{DOMAIN}"),
+            type="CNAME",
+            ttl=1800,
+            records=[token.apply(lambda t: f"{t}.dkim.amazonses.com")],
+        )
+
+sortear_role = criar_role(
+    "quemfaz-sortear", [(membros, LEITURA), (nucleos, LEITURA), (tarefas, CRUD)]
+)
+if REMETENTE:
+    aws.iam.RolePolicy(
+        "quemfaz-sortear-ses",
+        role=sortear_role.id,
+        policy=json.dumps(
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": "ses:SendEmail",
+                        "Resource": f"arn:aws:ses:{REGIAO}:{conta}:identity/*",
+                    }
+                ],
+            }
+        ),
+    )
+
+sortear_fn = aws.lambda_.Function(
+    "quemfaz-sortear",
+    role=sortear_role.arn,
+    runtime=RUNTIME,
+    handler="handler.handler",
+    timeout=60,
+    code=pulumi.FileArchive(f"{FUNCOES_DIR}/sortear"),
+    layers=[comum_layer.arn],
+    environment=aws.lambda_.FunctionEnvironmentArgs(
+        variables={
+            "MEMBROS_TABLE": membros.name,
+            "NUCLEOS_TABLE": nucleos.name,
+            "TAREFAS_TABLE": tarefas.name,
+            "SITE_URL": site_url,
+            # Sem remetente configurado, o sorteio acontece e o email só vai para o log
+            **({"REMETENTE": REMETENTE} if REMETENTE else {}),
+        }
+    ),
+)
+
+agendador_role = aws.iam.Role(
+    "quemfaz-agendador-role",
+    assume_role_policy=json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "scheduler.amazonaws.com"},
+                    "Action": "sts:AssumeRole",
+                }
+            ],
+        }
+    ),
+)
+aws.iam.RolePolicy(
+    "quemfaz-agendador-invoke",
+    role=agendador_role.id,
+    policy=sortear_fn.arn.apply(
+        lambda arn: json.dumps(
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {"Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": arn}
+                ],
+            }
+        )
+    ),
+)
+aws.scheduler.Schedule(
+    "quemfaz-sorteio",
+    schedule_expression="rate(5 minutes)",
+    flexible_time_window=aws.scheduler.ScheduleFlexibleTimeWindowArgs(mode="OFF"),
+    target=aws.scheduler.ScheduleTargetArgs(arn=sortear_fn.arn, role_arn=agendador_role.arn),
+)
+
 # Configuração lida pelo frontend ao abrir (sem Cognito: {} = modo de teste)
 aws.s3.BucketObjectv2(
     "site/config.json",

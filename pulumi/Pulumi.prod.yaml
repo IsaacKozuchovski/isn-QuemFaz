@@ -4,3 +4,4 @@ config:
   QuemFaz:googleClientId: 97923460194-s6sia6irno366d9934ma9jbj8b4i8dmu.apps.googleusercontent.com
   QuemFaz:googleClientSecret:
     secure: AAABAKymFxTXnYpWt1qcs/E/axAi7lYNiYaykMumD5Pzb9c+n4UHmFWCmIhS2Tu+nRx0oBEl28Fp/26c498BV0Uphg==
+  QuemFaz:remetente: nao-responda@quemfaz.negoci.online

@@ -137,6 +137,23 @@ Resources:
           Type: Api
           Properties: { Path: "/placar", Method: get }
 
+  # UC06: sorteio automático. Localmente o agendamento não roda; para testar:
+  #   sam local invoke SortearFunction --env-vars env.json --docker-network sam-local
+  SortearFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/sortear/
+      Timeout: 60
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref MembrosTable }
+        - DynamoDBReadPolicy: { TableName: !Ref NucleosTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref TarefasTable }
+      Events:
+        Agendamento:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(5 minutes)
+
 Outputs:
   ApiUrl:
     Description: URL da API
