@@ -1,5 +1,5 @@
 """UC01 · POST /login: cria ou recupera o membro autenticado."""
-from comum import corpo, erro, membro_id, membros, resposta
+from comum import claims, corpo, erro, membro_id, membros, resposta
 
 
 def handler(event, context):
@@ -21,7 +21,8 @@ def handler(event, context):
     membro = {
         "membroId": mid,
         "nome": dados["nome"],
-        "email": dados.get("email", ""),
+        # Com o Google, o email vem do token (confiável), não do formulário
+        "email": claims(event).get("email") or dados.get("email", ""),
         "idade": dados["idade"],
         "pontos": 0,
     }

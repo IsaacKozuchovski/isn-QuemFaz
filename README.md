@@ -23,6 +23,30 @@ O endereço do site aparece no fim, em `url`. Se o Pulumi ainda não tiver login
 
 Para rodar tudo localmente com Docker: `make dev` → http://localhost:5173.
 
+### Login com Google
+
+Sem configuração, o site entra em modo de teste (o email digitado identifica a pessoa). Para ativar o login com Google (Cognito):
+
+1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), crie um **ID do cliente OAuth** do tipo **Aplicativo da Web**, com a URI de redirecionamento autorizada mostrada em `google_redirect_uri` no fim do `make deploy`.
+2. Na pasta `pulumi/`:
+   ```bash
+   pulumi config set googleClientId <ID do cliente>
+   pulumi config set --secret googleClientSecret <chave secreta do cliente>
+   ```
+3. `make deploy` de novo.
+
+### Produção (subdomínio)
+
+O stack `prod` publica o site em `quemfaz.negoci.online` (definido em `pulumi/Pulumi.prod.yaml`), com HTTPS. O subdomínio tem a própria zona DNS na nossa conta AWS:
+
+1. `STACK=prod make deploy` cria a zona e mostra os servidores de nome (NS) no log. O deploy fica esperando a validação do certificado HTTPS: pode cancelar com Ctrl+C.
+2. O dono de `negoci.online` cria um registro NS do subdomínio apontando para esses servidores.
+3. `STACK=prod make deploy` de novo: o certificado é validado e o site sobe.
+
+**Não destrua o stack `prod`.** Uma zona nova teria outros NS, e a delegação pararia de funcionar. Por isso a zona é protegida no Pulumi: um `pulumi destroy` no `prod` falha de propósito.
+
+Depois do primeiro deploy, os NS também aparecem com `cd pulumi && pulumi stack output name_servers --stack prod`.
+
 ## Documentação
 
 - [Frontend: build, hospedagem e deploy](frontend/README.md)

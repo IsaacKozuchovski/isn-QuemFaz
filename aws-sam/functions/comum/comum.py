@@ -42,15 +42,26 @@ def corpo(event):
     return dados if isinstance(dados, dict) else None
 
 
+def claims(event):
+    """Dados do token do Cognito já validado pelo API Gateway ({} sem token).
+
+    No formato 1.0 do evento eles ficam em authorizer.claims; no 2.0, em
+    authorizer.jwt.claims. Os dois são aceitos.
+    """
+    autorizador = (event.get("requestContext") or {}).get("authorizer") or {}
+    return autorizador.get("claims") or (autorizador.get("jwt") or {}).get("claims") or {}
+
+
 def membro_id(event):
     """Identifica o usuário da requisição.
 
-    Na AWS, vem do token do Cognito (claim "sub"). Enquanto o Cognito não está
-    configurado, aceita o header "x-membro-id" para testes.
+    Na AWS com o Cognito ativo, vem do token (claim "sub"). Sem o Cognito
+    (sam local, ou stack sem as credenciais do Google), aceita o header
+    "x-membro-id" para testes. Com EXIGIR_TOKEN, o header é ignorado.
     """
-    claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
-    if claims.get("sub"):
-        return claims["sub"]
+    sub = claims(event).get("sub")
+    if sub or os.environ.get("EXIGIR_TOKEN"):
+        return sub
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
     return headers.get("x-membro-id")
 

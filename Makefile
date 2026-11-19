@@ -94,6 +94,8 @@ deploy:
 	@aws sts get-caller-identity > /dev/null 2>&1 || { \
 		echo "✗ Sem credenciais da AWS: rode 'aws configure' com a Access Key do usuário IAM"; exit 1; }
 	cd pulumi && pulumi stack select $(STACK) --create && pulumi up
+	@echo
+	@echo ">>> Site no ar: $$(cd pulumi && pulumi stack output url)"
 
 ## ---- Rodar o sistema localmente ------------------------------------------
 # `make dev`: sobe banco + API + frontend no mesmo terminal (Ctrl+C para tudo).
