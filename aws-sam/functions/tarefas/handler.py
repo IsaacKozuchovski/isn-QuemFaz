@@ -1,10 +1,3 @@
-"""Tarefas do núcleo do membro autenticado.
-
-UC04 · POST /tarefas                     cadastra tarefa
-       GET  /tarefas[?status=...]        lista tarefas do núcleo
-UC05 · POST /tarefas/{tarefaId}/escolher assume a tarefa
-UC07 · POST /tarefas/{tarefaId}/concluir marca como concluída (aguarda aprovação)
-"""
 import uuid
 from datetime import datetime, timezone
 
@@ -23,7 +16,6 @@ def _agora():
 
 
 def _data(texto):
-    """Converte ISO 8601 (ex.: 2026-10-20T18:00:00Z) para datetime com fuso, ou None."""
     try:
         data = datetime.fromisoformat(texto.replace("Z", "+00:00"))
     except (AttributeError, ValueError):
@@ -81,13 +73,12 @@ def escolher(membro, tarefa_id):
     tarefa = _buscar(membro, tarefa_id)
     if not tarefa:
         return erro(404, "Tarefa não encontrada")
-    if membro["idade"] < tarefa["idadeMinima"]:  # RN01
+    if membro["idade"] < tarefa["idadeMinima"]:
         return erro(403, "Você não atende à idade mínima desta tarefa")
     if _data(tarefa["horarioLimite"]) <= _agora():
         return erro(409, "O horário-limite desta tarefa já passou")
 
     try:
-        # A condição evita que dois membros escolham a mesma tarefa ao mesmo tempo
         atualizada = tarefas.update_item(
             Key={"nucleoId": membro["nucleoId"], "tarefaId": tarefa_id},
             UpdateExpression="SET #s = :novo, responsavel = :m",
@@ -124,10 +115,9 @@ def handler(event, context):
     membro, falha = membro_atual(event)
     if falha:
         return falha
-    if not membro.get("nucleoId"):  # RN07
+    if not membro.get("nucleoId"):
         return erro(403, "Você não pertence a nenhum núcleo familiar")
 
-    # "resource" é a rota declarada no template, ex.: /tarefas/{tarefaId}/escolher
     rota = event["resource"]
     tarefa_id = (event.get("pathParameters") or {}).get("tarefaId")
     if rota.endswith("/escolher"):

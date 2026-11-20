@@ -7,7 +7,6 @@ services:
       - "8000:8000"
     networks: [sam-local]
 
-  # Cria localmente as mesmas tabelas declaradas no template.yaml
   create-table:
     image: amazon/aws-cli
     depends_on: [dynamodb]

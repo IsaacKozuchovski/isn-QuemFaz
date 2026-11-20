@@ -1,12 +1,9 @@
-"""Código compartilhado entre as Lambdas (publicado como Lambda Layer)."""
 import json
 import os
 from decimal import Decimal
 
 import boto3
 
-# Local: DYNAMODB_ENDPOINT aponta para o DynamoDB Local (docker-compose).
-# AWS: fica vazio e o boto3 usa o DynamoDB real com as credenciais da role da Lambda.
 _endpoint = os.environ.get("DYNAMODB_ENDPOINT") or None
 _local = {"aws_access_key_id": "local", "aws_secret_access_key": "local"} if _endpoint else {}
 
@@ -34,7 +31,6 @@ def erro(status, mensagem):
 
 
 def corpo(event):
-    """Body JSON da requisição, ou None se for inválido."""
     try:
         dados = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
@@ -43,22 +39,11 @@ def corpo(event):
 
 
 def claims(event):
-    """Dados do token do Cognito já validado pelo API Gateway ({} sem token).
-
-    No formato 1.0 do evento eles ficam em authorizer.claims; no 2.0, em
-    authorizer.jwt.claims. Os dois são aceitos.
-    """
     autorizador = (event.get("requestContext") or {}).get("authorizer") or {}
     return autorizador.get("claims") or (autorizador.get("jwt") or {}).get("claims") or {}
 
 
 def membro_id(event):
-    """Identifica o usuário da requisição.
-
-    Na AWS com o Cognito ativo, vem do token (claim "sub"). Sem o Cognito
-    (sam local, ou stack sem as credenciais do Google), aceita o header
-    "x-membro-id" para testes. Com EXIGIR_TOKEN, o header é ignorado.
-    """
     sub = claims(event).get("sub")
     if sub or os.environ.get("EXIGIR_TOKEN"):
         return sub
@@ -67,7 +52,6 @@ def membro_id(event):
 
 
 def membro_atual(event):
-    """Retorna (membro, None) ou (None, resposta_de_erro)."""
     mid = membro_id(event)
     if not mid:
         return None, erro(401, "Usuário não identificado")

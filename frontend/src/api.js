@@ -1,10 +1,3 @@
-// Cliente da API do QuemFaz. Todas as rotas ficam sob /api no mesmo domínio
-// do site (CloudFront), então não há CORS.
-//
-// Com o login do Google ativo, cada requisição leva o token do Cognito
-// (Authorization: Bearer ...). No modo de teste, leva o email digitado no
-// header x-membro-id. Ver auth.js.
-
 import { tokenAtual } from "./auth.js";
 
 async function cabecalhoAuth(membroId) {
@@ -26,8 +19,6 @@ async function req(membroId, metodo, rota, corpo) {
   }
   const dados = await res.json().catch(() => null);
   if (!res.ok) {
-    // Sem corpo JSON = a resposta não veio das Lambdas (ex.: proxy do Vite
-    // sem o `sam local` rodando, ou falha no API Gateway).
     if (!dados?.message && res.status >= 500) {
       throw new Error(`Servidor indisponível (erro ${res.status}). O backend está rodando?`);
     }

@@ -22,12 +22,9 @@ const STATUS = {
 export default function App() {
   const [membro, setMembro] = useState(null);
   const [carregando, setCarregando] = useState(true);
-  // Entrou com o Google, mas ainda não tem cadastro no QuemFaz
   const [primeiroAcesso, setPrimeiroAcesso] = useState(false);
   const [erro, setErro] = useState("");
 
-  // POST /login devolve o membro já cadastrado, então serve para recarregar
-  // os dados (pontos, núcleo) de quem já entrou antes.
   const recarregar = useCallback(async () => {
     if (!logado()) return;
     try {
@@ -102,9 +99,6 @@ export default function App() {
   );
 }
 
-// ---- UC01 · Autenticar-se ------------------------------------------------
-// Com o Cognito ativo: botão "Entrar com Google". Na volta do Google, quem
-// ainda não tem cadastro informa nome e idade (o email vem da conta Google).
 function LoginGoogle({ primeiroAcesso, onEntrar, onTrocarConta, erroInicial }) {
   const [erro, setErro] = useState(erroInicial);
   const [enviando, setEnviando] = useState(false);
@@ -180,10 +174,6 @@ function LoginGoogle({ primeiroAcesso, onEntrar, onTrocarConta, erroInicial }) {
   );
 }
 
-// Modo de teste (sem Cognito, ou rodando local): o email identifica a pessoa.
-// Etapa 1: só o email. Se o membro já existe, POST /login devolve o cadastro
-// e a pessoa entra direto. Se não existe, a API responde 400 pedindo nome e
-// idade, e aí aparece a etapa 2 (primeiro acesso).
 function LoginEmail({ onEntrar, erroInicial }) {
   const [erro, setErro] = useState(erroInicial);
   const [enviando, setEnviando] = useState(false);
@@ -262,7 +252,6 @@ function LoginEmail({ onEntrar, erroInicial }) {
   );
 }
 
-// ---- UC02 / UC03 · Criar ou entrar num núcleo ----------------------------
 function SemNucleo({ membro, onPronto }) {
   const [erro, setErro] = useState("");
   const cliente = api(membro.membroId);
@@ -304,7 +293,6 @@ function SemNucleo({ membro, onPronto }) {
   );
 }
 
-// ---- Painel do núcleo ----------------------------------------------------
 function Painel({ membro, onMudou }) {
   const [aba, setAba] = useState("tarefas");
   const [tarefas, setTarefas] = useState([]);
@@ -328,7 +316,6 @@ function Painel({ membro, onMudou }) {
     carregar();
   }, [carregar]);
 
-  // O nome do núcleo não muda, então basta buscar uma vez
   const [nucleo, setNucleo] = useState(null);
   useEffect(() => {
     api(membro.membroId)
@@ -339,8 +326,6 @@ function Painel({ membro, onMudou }) {
 
   const [ocupado, setOcupado] = useState(false);
 
-  // Executa uma ação e já mostra a tarefa devolvida pela API; o resto
-  // (lista completa, placar, pontos do topo) é recarregado em segundo plano.
   async function agir(acao) {
     setOcupado(true);
     let ok = false;
@@ -385,7 +370,6 @@ function Painel({ membro, onMudou }) {
       </nav>
       <Erro texto={erro} />
 
-      {/* disabled num fieldset desativa todos os botões de dentro */}
       <fieldset className="conteudo" disabled={ocupado}>
       {aba === "tarefas" && (
         <>
@@ -421,7 +405,7 @@ function Painel({ membro, onMudou }) {
 }
 
 function Convite({ nucleoId }) {
-  const [estado, setEstado] = useState("pronto"); // pronto | copiado | falhou
+  const [estado, setEstado] = useState("pronto");
 
   async function copiar() {
     const ok = await copiarTexto(nucleoId);
@@ -436,7 +420,6 @@ function Convite({ nucleoId }) {
         <span className="dica">Quem receber o código entra pelo “Entrar com um código de convite”.</span>
       </div>
       <div className="convite-codigo">
-        {/* clicar no código seleciona tudo, para copiar à mão se precisar */}
         <code onClick={(e) => window.getSelection()?.selectAllChildren(e.currentTarget)}>
           {nucleoId}
         </code>
@@ -448,8 +431,6 @@ function Convite({ nucleoId }) {
   );
 }
 
-// navigator.clipboard só existe em HTTPS ou localhost. No acesso pela rede
-// (http://192.168…) usa o jeito antigo, com um textarea temporário.
 async function copiarTexto(texto) {
   try {
     await navigator.clipboard.writeText(texto);
@@ -481,7 +462,6 @@ function Aba({ id, atual, onClick, children }) {
   );
 }
 
-// ---- UC04 · Cadastrar tarefa ---------------------------------------------
 function NovaTarefa({ onCriar }) {
   const [aberto, setAberto] = useState(false);
 
@@ -494,7 +474,6 @@ function NovaTarefa({ onCriar }) {
       descricao: f.get("descricao").trim(),
       pontos: Number(f.get("pontos")),
       idadeMinima: Number(f.get("idadeMinima") || 0),
-      // datetime-local vem no fuso do navegador; toISOString converte para UTC (…Z)
       horarioLimite: new Date(f.get("horarioLimite")).toISOString(),
     });
     if (ok) {
@@ -550,7 +529,6 @@ function NovaTarefa({ onCriar }) {
   );
 }
 
-// ---- UC05 / UC07 · Escolher e concluir -----------------------------------
 function ListaTarefas({ tarefas, membro, nomes, onEscolher, onConcluir }) {
   if (tarefas.length === 0) {
     return <p className="vazio">Nenhuma tarefa cadastrada ainda.</p>;
@@ -563,7 +541,6 @@ function ListaTarefas({ tarefas, membro, nomes, onEscolher, onConcluir }) {
     if (t.status === "disponivel") {
       if (vencida) return <span className="aviso">Prazo encerrado</span>;
       if (membro.idade < t.idadeMinima) {
-        // RN01
         return <span className="aviso">Só a partir de {t.idadeMinima} anos</span>;
       }
       return <button onClick={() => onEscolher(t.tarefaId)}>Escolher</button>;
@@ -595,7 +572,6 @@ function ListaTarefas({ tarefas, membro, nomes, onEscolher, onConcluir }) {
       </>
     );
 
-    // Concluídas ficam recolhidas para não poluir a lista
     if (status === "concluida") {
       return (
         <details key={status} className="grupo">
@@ -613,7 +589,6 @@ function ListaTarefas({ tarefas, membro, nomes, onEscolher, onConcluir }) {
   });
 }
 
-// ---- UC08 · Aprovar ou rejeitar ------------------------------------------
 function Aprovacoes({ tarefas, nomes, onDecidir }) {
   if (tarefas.length === 0) {
     return <p className="vazio">Nada aguardando sua aprovação.</p>;
@@ -664,9 +639,6 @@ function TarefaCard({ tarefa: t, quem, children }) {
   );
 }
 
-// ---- UC09 · Placar -------------------------------------------------------
-// Clicar numa pessoa mostra as tarefas concluídas (aprovadas) que somaram
-// os pontos dela — as tarefas do núcleo já estão carregadas no Painel.
 function Placar({ familia, placar, membro, tarefas, nomes }) {
   const total = placar.reduce((soma, m) => soma + m.pontos, 0);
   return (
@@ -728,7 +700,6 @@ function Erro({ texto }) {
   ) : null;
 }
 
-// "13/11 às 21:07"
 function formatar(iso) {
   const d = new Date(iso);
   const dia = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
