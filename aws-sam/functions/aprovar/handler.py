@@ -1,7 +1,3 @@
-"""UC08 · POST /aprovar: aprova ou rejeita a conclusão de uma tarefa.
-
-Body: {"tarefaId": "...", "aprovado": true | false}
-"""
 from botocore.exceptions import ClientError
 
 from comum import corpo, erro, membro_atual, membros, resposta, tarefas
@@ -11,7 +7,7 @@ def handler(event, context):
     membro, falha = membro_atual(event)
     if falha:
         return falha
-    if not membro.get("nucleoId"):  # RN07
+    if not membro.get("nucleoId"):
         return erro(403, "Você não pertence a nenhum núcleo familiar")
 
     dados = corpo(event)
@@ -24,13 +20,13 @@ def handler(event, context):
         return erro(404, "Tarefa não encontrada")
     if tarefa["status"] != "aguardando_aprovacao":
         return erro(409, "Tarefa não está aguardando aprovação")
-    if tarefa["responsavel"] == membro["membroId"]:  # RN03
+    if tarefa["responsavel"] == membro["membroId"]:
         return erro(403, "Quem executou a tarefa não pode aprová-la")
 
     if dados["aprovado"]:
         update = "SET #s = :concluida, aprovadaPor = :m"
         valores = {":concluida": "concluida", ":m": membro["membroId"]}
-    else:  # RN05
+    else:
         update = "SET #s = :disp REMOVE responsavel"
         valores = {":disp": "disponivel"}
 
@@ -48,7 +44,7 @@ def handler(event, context):
             return erro(409, "Tarefa não está aguardando aprovação")
         raise
 
-    if dados["aprovado"]:  # RN04: pontos só entram após a aprovação
+    if dados["aprovado"]:
         membros.update_item(
             Key={"membroId": tarefa["responsavel"]},
             UpdateExpression="ADD pontos :p",

@@ -8,13 +8,15 @@ API Gateway + Lambda (Python/boto3) + DynamoDB, definido no [template.yaml](temp
 |---|---|---|
 | `Membros` | `membroId` | nome, email, idade, nucleoId, pontos · índice `nucleoId-index` |
 | `Nucleos` | `nucleoId` | nome, criadoPor |
-| `Tarefas` | `nucleoId` + `tarefaId` | nome, descricao (opcional), pontos, idadeMinima, horarioLimite, status, responsavel |
+| `Tarefas` | `nucleoId` + `tarefaId` | nome, descricao (opcional), pontos, idadeMinima, horarioLimite, status, criadaPor, responsavel, aprovadaPor, sorteada |
 
-Localmente o banco roda no DynamoDB Local (Docker); na AWS, as tabelas são criadas pelo template.
+Localmente o banco roda no DynamoDB Local (Docker); na AWS, as tabelas são criadas pelo Pulumi.
 
 ## API
 
-O usuário é identificado pelo header `x-membro-id` (será substituído pelo Cognito).
+Na AWS, o usuário é identificado pelo token do login com Google (Cognito), e o API Gateway recusa quem não tem token válido.
+
+Localmente (`make dev`) e nos testes automáticos não existe Cognito, então o usuário é identificado pelo header `x-membro-id`. Na AWS, esse header é ignorado.
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -28,10 +30,4 @@ O usuário é identificado pelo header `x-membro-id` (será substituído pelo Co
 | POST | `/aprovar` | Aprova ou rejeita a conclusão |
 | GET | `/placar` | Pontuação do núcleo |
 
-## Como rodar
-
-```bash
-make dev    # sobe DynamoDB Local + API local (porta 3000) no tmux
-make demo   # testa o fluxo completo
-make stop   # derruba tudo
-```
+Além das rotas, a função `sortear` roda a cada 5 minutos (EventBridge Scheduler): sorteia as tarefas vencidas que ninguém escolheu e avisa o sorteado por email (UC06).

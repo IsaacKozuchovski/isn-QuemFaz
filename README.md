@@ -12,57 +12,39 @@ Tecnicamente, é uma aplicação web na AWS com arquitetura de microsserviços o
 
 ## Como rodar
 
-Na raiz do repositório (Linux ou macOS):
+| Ambiente | Endereço |
+|---|---|
+| `prod` | https://quemfaz.negoci.online |
+| `dev` | o link que aparece no fim do `make deploy` (`>>> Site no ar: ...`) |
+| local | `make dev` → http://localhost:5173 (com Docker) |
+
+Para subir o `dev`, na raiz do repositório (Linux ou macOS):
 
 ```bash
 make          # instala o que faltar: Pulumi, uv, Node.js, AWS CLI e SAM
 make deploy   # pulumi up no stack dev, com build do frontend
 ```
 
-O endereço do site aparece no fim, em `url`. Se o Pulumi ainda não tiver login, o `make deploy` pede; se faltarem credenciais da AWS, avisa para rodar `aws configure`.
+Se o Pulumi ainda não tiver login, o `make deploy` pede; se faltarem credenciais da AWS, avisa para rodar `aws configure`.
 
-Para rodar tudo localmente com Docker: `make dev` → http://localhost:5173.
+Na AWS, o login é com a conta Google.
 
-### Login com Google
+Roteiro para testar:
 
-Sem configuração, o site entra em modo de teste (o email digitado identifica a pessoa). Para ativar o login com Google (Cognito):
+1. Entre com o Google e, no primeiro acesso, informe nome e idade.
+2. Crie um núcleo e envie o código de convite para outra pessoa entrar.
+3. Cadastre uma tarefa, escolha, marque como concluída e peça para a outra pessoa aprovar: os pontos aparecem no placar.
+4. Para ver o sorteio, cadastre uma tarefa com horário-limite daqui a 2 minutos e não escolha: em até 5 minutos depois do prazo, alguém é sorteado e recebe um email.
 
-1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), crie um **ID do cliente OAuth** do tipo **Aplicativo da Web**, com a URI de redirecionamento autorizada mostrada em `google_redirect_uri` no fim do `make deploy`.
-2. Na pasta `pulumi/`:
-   ```bash
-   pulumi config set googleClientId <ID do cliente>
-   pulumi config set --secret googleClientSecret <chave secreta do cliente>
-   ```
-3. `make deploy` de novo.
-
-### Sorteio e emails
-
-A cada 5 minutos, o sistema sorteia as tarefas que ninguém escolheu até o horário-limite (UC06) e avisa o sorteado por email, enviado por `nao-responda@quemfaz.negoci.online` (configurado em `remetente` no stack).
-
-Enquanto a conta AWS estiver no sandbox do SES, só chegam emails para endereços verificados. Para verificar um email (a pessoa recebe um link de confirmação da AWS):
-
-```bash
-aws sesv2 create-email-identity --email-identity email@da.pessoa.com --region sa-east-1
-```
-
-### Produção (subdomínio)
-
-O stack `prod` publica o site em `quemfaz.negoci.online` (definido em `pulumi/Pulumi.prod.yaml`), com HTTPS. O subdomínio tem a própria zona DNS na nossa conta AWS:
-
-1. `STACK=prod make deploy` cria a zona e mostra os servidores de nome (NS) no log. O deploy fica esperando a validação do certificado HTTPS: pode cancelar com Ctrl+C.
-2. O dono de `negoci.online` cria um registro NS do subdomínio apontando para esses servidores.
-3. `STACK=prod make deploy` de novo: o certificado é validado e o site sobe.
-
-**Não destrua o stack `prod`.** Uma zona nova teria outros NS, e a delegação pararia de funcionar. Por isso a zona é protegida no Pulumi: um `pulumi destroy` no `prod` falha de propósito.
-
-Depois do primeiro deploy, os NS também aparecem com `cd pulumi && pulumi stack output name_servers --stack prod`.
+Testes automáticos: `make test` (unitários) e `make test-integracao` (com Docker).
 
 ## Documentação
 
+- [Infraestrutura e deploy](docs/infraestrutura.md)
 - [Frontend: build, hospedagem e deploy](frontend/README.md)
 - [Requisitos funcionais e não funcionais](docs/requisitos.md)
 - [Regras de negócio](docs/regras-de-negocio.md)
-- [Backend: API, banco de dados e execução local (AWS SAM)](aws-sam/README.md)
+- [Backend: API e banco de dados (AWS SAM)](aws-sam/README.md)
 - Casos de uso:
   - [UC01 · Autenticar-se](docs/casos-de-uso/caso-de-uso-1.md)
   - [UC02 · Criar núcleo familiar](docs/casos-de-uso/caso-de-uso-2.md)
@@ -108,9 +90,6 @@ Depois do primeiro deploy, os NS também aparecem com `cd pulumi && pulumi stack
 
 ### Lambda
 ![Fluxograma Lambda](docs/diagramas-fluxogramas/fluxograma-lambda.png)
-
-### Mensagens (SQS/SNS)
-![Fluxograma Mensagens](docs/diagramas-fluxogramas/fluxograma-mensagens.png)
 
 ### Dynamo DB
 ![Fluxograma Dynamo DB](docs/diagramas-fluxogramas/fluxograma-dynamodb.png)

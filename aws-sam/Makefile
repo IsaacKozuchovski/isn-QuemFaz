@@ -10,14 +10,12 @@ TAREFA   ?=
 APROVADO ?= true
 TABLE    ?= Tarefas
 
-# Dummy credentials, exported to every command below (used by the aws CLI)
 export AWS_ACCESS_KEY_ID     := local
 export AWS_SECRET_ACCESS_KEY := local
 export AWS_DEFAULT_REGION    := sa-east-1
 
 .PHONY: dev up logs wait-table build api login nucleo entrar tarefa tarefas escolher concluir aprovar placar demo scan stop clean
 
-## ---- tmux layout ---------------------------------------------------------
 dev:
 	@if tmux has-session -t $(SESSION) 2>/dev/null; then \
 		exec tmux attach -t $(SESSION); \
@@ -33,7 +31,6 @@ dev:
 	tmux select-pane -t $$RIGHT; \
 	exec tmux attach -t $(SESSION)
 
-## ---- top left: Docker ----------------------------------------------------
 up:
 	docker compose down
 	docker compose up -d
@@ -41,7 +38,6 @@ up:
 logs:
 	docker compose logs -f
 
-## ---- bottom left: SAM ----------------------------------------------------
 wait-table:
 	@echo "Waiting for the table to be created..."
 	@until docker compose logs create-table 2>/dev/null | grep -q 'TABLE CREATED'; do sleep 1; done
@@ -50,12 +46,8 @@ build:
 	sam build
 
 api: wait-table build
-	# EAGER: um container por função já fica de pé e é reaproveitado entre as
-	# requisições (sem isso, cada chamada sobe um container novo, ~2,5 s)
 	sam local start-api --env-vars env.json --docker-network $(NETWORK) --warm-containers EAGER
 
-## ---- right: client -------------------------------------------------------
-# Use MEMBRO=<id> para simular usuários diferentes (enquanto o Cognito não está ligado)
 CURL = curl -s -H 'Content-Type: application/json' -H 'x-membro-id: $(MEMBRO)'
 
 login:
@@ -86,14 +78,12 @@ aprovar:
 placar:
 	$(CURL) $(API)/placar; echo
 
-# Fluxo completo com dois membros (criar núcleo → tarefa → escolher → concluir → aprovar → placar)
 demo:
 	./demo.sh $(API)
 
 scan:
 	aws dynamodb scan --table-name $(TABLE) --endpoint-url $(ENDPOINT)
 
-## ---- teardown -------------------------------------------------------------
 stop:
 	docker compose down
 	-tmux kill-session -t $(SESSION)

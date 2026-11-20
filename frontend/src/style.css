@@ -58,7 +58,6 @@ body {
   color: var(--primaria);
 }
 
-/* "Faz" num verde mais claro, para o nome ler como duas palavras: Quem · Faz */
 .logo span {
   color: var(--destaque);
 }
@@ -91,7 +90,6 @@ body {
   max-width: 10rem;
 }
 
-/* Pontos em destaque */
 .placa-pontos {
   flex-shrink: 0;
   display: inline-flex;
@@ -246,7 +244,6 @@ button.link {
   background: var(--erro-fundo);
 }
 
-/* ---- Cartão de convite ---- */
 .convite {
   display: flex;
   flex-direction: column;
@@ -354,7 +351,6 @@ button.copiar.falhou {
   padding: 0.75rem;
 }
 
-/* ---- Grupos de tarefas por status ---- */
 .grupo {
   margin-bottom: 1.25rem;
 }
@@ -385,7 +381,6 @@ button.copiar.falhou {
   letter-spacing: 0;
 }
 
-/* ---- Cartão da tarefa ---- */
 .lista > li.tarefa {
   flex-direction: column;
   align-items: stretch;
@@ -487,7 +482,6 @@ button.copiar.falhou {
   overflow-wrap: anywhere;
 }
 
-/* ---- Placar: cada pessoa abre a lista do que fez ---- */
 .placar > li {
   display: block;
   padding: 0;
@@ -506,7 +500,6 @@ button.copiar.falhou {
   display: none;
 }
 
-/* setinha que gira ao abrir */
 .placar summary::after {
   content: "";
   width: 0.45rem;

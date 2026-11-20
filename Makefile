@@ -1,28 +1,18 @@
 NODE_VERSION := 22.19.0
-# linux-x64, darwin-arm64, darwin-x64...
 NODE_OS      := $(shell uname -s | tr A-Z a-z)
 NODE_ARCH    := $(shell uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')
 NODE_DIST    := node-v$(NODE_VERSION)-$(NODE_OS)-$(NODE_ARCH)
 
-# As ferramentas instaladas por `make install` ficam em ~/.local/bin e ~/.pulumi/bin.
-# Vão no FIM do PATH: se o sistema já tem a ferramenta, a do sistema vale.
 export PATH := $(PATH):$(HOME)/.local/bin:$(HOME)/.pulumi/bin
 
 STACK ?= dev
 SISTEMA := $(shell uname -s)
 
 .PHONY: all install aws_cli aws_sam_cli pulumi uv node shell \
-        deploy check dev backend frontend stop
+        deploy check dev backend frontend stop test test-integracao
 
-## ---- Uso -------------------------------------------------------------------
-#   make          instala o que faltar (Pulumi, uv, Node.js, AWS CLI, SAM)
-#   make deploy   pulumi up no stack dev (cria o stack se não existir)
 all: install
 
-# $(call garantir,<comando>,<alvo no Linux>,<pacote no Homebrew>)
-# Se o comando já funciona, não faz nada; senão instala do jeito do sistema.
-# (testa com --version, e não só se existe: um binário de Linux copiado para
-# um Mac existe, mas não executa)
 ifeq ($(SISTEMA),Darwin)
 garantir = $(1) --version > /dev/null 2>&1 && echo "✓ $(1)" || brew install $(3)
 else
@@ -70,7 +60,6 @@ pulumi:
 uv:
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Node.js (para o build do frontend), instalado em ~/.local sem precisar de sudo
 node:
 	curl -fsSL https://nodejs.org/dist/v$(NODE_VERSION)/$(NODE_DIST).tar.gz | tar -xz -C /tmp
 	rm -rf ~/.local/node
@@ -78,7 +67,6 @@ node:
 	mv /tmp/$(NODE_DIST) ~/.local/node
 	ln -sf ~/.local/node/bin/node ~/.local/node/bin/npm ~/.local/node/bin/npx ~/.local/bin/
 
-# Acrescenta ao ~/.bashrc (sem apagar o que já existe e sem repetir)
 shell:
 	@grep -qF '# QuemFaz' ~/.bashrc 2>/dev/null || { \
 		echo '# QuemFaz'; \
@@ -86,8 +74,6 @@ shell:
 		echo 'complete -C "$$HOME/.local/bin/aws_completer" aws'; \
 	} >> ~/.bashrc
 
-## ---- Deploy: `make deploy` (ou STACK=prod make deploy) -------------------
-# Confere login e credenciais antes; o programa Pulumi faz o build do frontend.
 deploy:
 	@pulumi version > /dev/null 2>&1 || { echo "✗ Pulumi não encontrado: rode 'make' antes"; exit 1; }
 	@pulumi whoami > /dev/null 2>&1 || pulumi login
@@ -96,10 +82,6 @@ deploy:
 	cd pulumi && pulumi stack select $(STACK) --create && pulumi up
 	@echo
 	@echo ">>> Site no ar: $$(cd pulumi && pulumi stack output url)"
-
-## ---- Rodar o sistema localmente ------------------------------------------
-# `make dev`: sobe banco + API + frontend no mesmo terminal (Ctrl+C para tudo).
-# Depois, `make stop` derruba o DynamoDB Local.
 
 check:
 	@command -v docker > /dev/null || { echo "✗ Docker não encontrado: instale o Docker"; exit 1; }
@@ -123,3 +105,10 @@ frontend:
 
 stop:
 	$(MAKE) -C aws-sam stop
+
+test:
+	cd aws-sam && uv run --no-project --with-requirements requirements-dev.txt pytest tests/unitarios
+
+test-integracao: check
+	cd aws-sam && docker compose up -d dynamodb
+	cd aws-sam && uv run --no-project --with-requirements requirements-dev.txt pytest tests/integracao

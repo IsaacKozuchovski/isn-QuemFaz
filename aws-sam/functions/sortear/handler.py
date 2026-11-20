@@ -1,10 +1,3 @@
-"""UC06 · Sorteio automático (RN02), chamado pelo EventBridge Scheduler.
-
-Procura tarefas "disponível" cujo horário-limite já passou e sorteia um
-membro do núcleo com a idade mínima (RN01). Se ninguém for elegível, a
-tarefa continua disponível (fluxo alternativo do UC06). O sorteado recebe
-um email (SES) quando REMETENTE está configurado.
-"""
 import os
 import random
 from datetime import datetime, timezone
@@ -41,7 +34,6 @@ def _tarefas_vencidas(agora):
 
 
 def _atribuir(tarefa, membro):
-    """Atribui só se a tarefa ainda estiver disponível (alguém pode ter escolhido)."""
     try:
         tarefas.update_item(
             Key={"nucleoId": tarefa["nucleoId"], "tarefaId": tarefa["tarefaId"]},
@@ -63,7 +55,6 @@ def _atribuir(tarefa, membro):
 
 
 def _avisar(tarefa, membro):
-    """Email para o sorteado. Uma falha no envio não desfaz o sorteio."""
     email = membro.get("email")
     if not email:
         print(f"Sem email para avisar {membro['membroId']}")
@@ -93,7 +84,6 @@ def _avisar(tarefa, membro):
         )
         print(f"Email enviado para {email}")
     except ClientError as e:
-        # No sandbox do SES, destinatários não verificados são recusados
         print(f"Falha ao enviar email para {email}: {e.response['Error']['Message']}")
 
 
@@ -105,7 +95,7 @@ def handler(event, context):
             IndexName="nucleoId-index",
             KeyConditionExpression=Key("nucleoId").eq(tarefa["nucleoId"]),
         )["Items"]
-        elegiveis = [m for m in familia if m.get("idade", 0) >= tarefa.get("idadeMinima", 0)]  # RN01
+        elegiveis = [m for m in familia if m.get("idade", 0) >= tarefa.get("idadeMinima", 0)]
         if not elegiveis:
             print(f"Tarefa {tarefa['tarefaId']}: ninguém elegível, continua disponível")
             continue

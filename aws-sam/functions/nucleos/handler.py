@@ -1,7 +1,3 @@
-"""UC02 · POST /nucleos: cria o núcleo familiar.
-UC03 · POST /nucleos/{nucleoId}/membros: entra num núcleo (o id funciona como convite).
-       GET  /nucleos/{nucleoId}: dados do núcleo (nome), só para quem é dele.
-"""
 import uuid
 
 from botocore.exceptions import ClientError
@@ -10,7 +6,6 @@ from comum import corpo, erro, membro_atual, membros, nucleos, resposta
 
 
 def _vincular(membro, nucleo_id):
-    """Vincula o membro ao núcleo, só se ele ainda não tiver um (RN06)."""
     try:
         membros.update_item(
             Key={"membroId": membro["membroId"]},
@@ -49,7 +44,7 @@ def entrar(event, membro):
 
 def consultar(event, membro):
     nucleo_id = event["pathParameters"]["nucleoId"]
-    if membro.get("nucleoId") != nucleo_id:  # RN07
+    if membro.get("nucleoId") != nucleo_id:
         return erro(403, "Você não pertence a este núcleo familiar")
     nucleo = nucleos.get_item(Key={"nucleoId": nucleo_id}).get("Item")
     if not nucleo:
